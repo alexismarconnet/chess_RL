@@ -1,49 +1,55 @@
 import chess
+import numpy as np
+from .board_encoder import board_to_tensor, action_to_move, get_legal_action_mask
 
 class ChessEnvironment:
     """
-    Environnement d'échecs pour l'Apprentissage par Renforcement.
-    Encapsule la bibliothèque python-chess pour fournir une interface simple :
-    reset(), get_legal_moves(), step(move), render().
+    Environnement d'échecs standardisé pour l'Apprentissage par Renforcement.
+    Il renvoie des tenseurs (observations) à l'agent et gère l'espace d'actions.
     """
     def __init__(self):
-        # Initialise un nouvel échiquier officiel d'échecs
         self.board = chess.Board()
 
-    def reset(self):
+    def reset(self) -> np.ndarray:
         """
-        Remet l'échiquier dans sa position initiale de début de partie.
-        Retourne l'état initial (l'objet board).
+        Remet l'échiquier à zéro et retourne l'état sous forme de tenseur (14, 8, 8).
         """
         self.board.reset()
-        return self.board
+        return board_to_tensor(self.board)
+
+    def get_state(self) -> np.ndarray:
+        """
+        Retourne l'état actuel sous forme de tenseur (14, 8, 8).
+        """
+        return board_to_tensor(self.board)
+
+    def get_legal_mask(self) -> np.ndarray:
+        """
+        Retourne le masque des coups légaux pour l'état actuel.
+        """
+        return get_legal_action_mask(self.board)
 
     def get_legal_moves(self):
         """
-        Retourne la liste de tous les coups légaux (valides selon les règles des échecs)
-        sous forme d'objets chess.Move.
+        Retourne la liste des objets chess.Move légaux.
         """
         return list(self.board.legal_moves)
 
-    def step(self, move: chess.Move):
+    def step(self, action_or_move):
         """
-        Exécute un coup sur l'échiquier, puis calcule la récompense et 
-        vérifie si la partie est terminée.
-        
-        Args:
-            move (chess.Move): Le coup à jouer (ex: chess.Move.from_uci("e2e4"))
-            
-        Returns:
-            tuple: (next_state, reward, done, info)
+        Exécute une action (indice entier ou objet chess.Move), met à jour l'échiquier et retourne :
+        (next_state_tensor, reward, done, info)
         """
-        # 1. Vérification de sécurité
-        if move not in self.board.legal_moves:
-            raise ValueError(f"Coup illégal tenté : {move}")
+        if isinstance(action_or_move, chess.Move):
+            move = action_or_move
+        else:
+            move = action_to_move(action_or_move, self.board)
 
-        # 2. Jouer le coup sur l'échiquier
+        if move is None or move not in self.board.legal_moves:
+            raise ValueError(f"Action / coup illégal tenté : {action_or_move}")
+
         self.board.push(move)
 
-        # 3. Vérifier si la partie est terminée et attribuer la récompense
         done = self.board.is_game_over()
         reward = 0.0
         info = {}
@@ -52,22 +58,21 @@ class ChessEnvironment:
             outcome = self.board.outcome()
             if outcome is not None:
                 if outcome.winner == chess.WHITE:
-                    reward = 1.0  # Victoire des blancs
+                    reward = 1.0
                     info["result"] = "white_win"
                 elif outcome.winner == chess.BLACK:
-                    reward = -1.0 # Victoire des noirs (défaite des blancs)
+                    reward = -1.0
                     info["result"] = "black_win"
                 else:
-                    reward = 0.0  # Match nul (pat, répétition, etc.)
+                    reward = 0.0
                     info["result"] = "draw"
-        else:
-            reward = 0.0  # Pas de récompense intermédiaire pour l'instant
 
-        return self.board, reward, done, info
+        return self.get_state(), reward, done, info
 
     def render(self):
         """
         Affiche l'échiquier dans le terminal.
         """
         print("\n" + str(self.board) + "\n")
+
 
