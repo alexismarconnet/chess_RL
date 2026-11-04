@@ -1,1 +1,4 @@
-# Module Models (Réseaux de neurones)
+from .network import ChessNet
+
+__all__ = ["ChessNet"]
+
