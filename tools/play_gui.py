@@ -3,139 +3,187 @@ import os
 import tkinter as tk
 from tkinter import messagebox
 import chess
+from PIL import Image, ImageTk
 
-# Ajouter la racine du projet au path pour pouvoir importer environment
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from environment import ChessEnvironment
 
-PIECE_UNICODE = {
-    'P': '♙', 'N': '♘', 'B': '♗', 'R': '♖', 'Q': '♕', 'K': '♔',
-    'p': '♟', 'n': '♞', 'b': '♝', 'r': '♜', 'q': '♛', 'k': '♚'
+PIECE_FILES = {
+    'P': 'w_pawn.png', 'N': 'w_knight.png', 'B': 'w_bishop.png', 'R': 'w_rook.png', 'Q': 'w_queen.png', 'K': 'w_king.png',
+    'p': 'b_pawn.png', 'n': 'b_knight.png', 'b': 'b_bishop.png', 'r': 'b_rook.png', 'q': 'b_queen.png', 'k': 'b_king.png'
+}
+
+PIECE_LABELS = {
+    'P': 'P', 'N': 'N', 'B': 'B', 'R': 'R', 'Q': 'Q', 'K': 'K',
+    'p': 'p', 'n': 'n', 'b': 'b', 'r': 'r', 'q': 'q', 'k': 'k'
 }
 
 class ChessGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Chess RL - Mode Local (Humain vs Humain)")
-        
+        self.root.title("Chess RL - Mode Local (Custom Images avec PIL)")
+        self.root.geometry("600x680")
+        self.root.minsize(400, 450)
+
         self.env = ChessEnvironment()
         self.env.reset()
 
         self.selected_sq = None
         self.legal_destinations = []
+        
+        # Chargement des images brutes avec PIL
+        self.raw_images = {}
+        self.loaded_photos = {} # Cache pour les images redimensionnées
+        self.load_piece_images()
 
         self.create_widgets()
-        self.update_board_display()
+
+    def load_piece_images(self):
+        assets_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "pieces")
+        os.makedirs(assets_dir, exist_ok=True)
+        for symbol, filename in PIECE_FILES.items():
+            path = os.path.join(assets_dir, filename)
+            if os.path.exists(path):
+                try:
+                    img = Image.open(path).convert("RGBA")
+                    self.raw_images[symbol] = img
+                    print(f"Image chargée avec succès : {filename}")
+                except Exception as e:
+                    print(f"Erreur chargement image {filename}: {e}")
+            else:
+                print(f"Image introuvable : {path} (Fallback texte/badge activé pour cette pièce)")
 
     def create_widgets(self):
-        self.info_label = tk.Label(self.root, text="Tour : Blancs", font=("Arial", 14, "bold"))
-        self.info_label.pack(pady=10)
+        self.info_label = tk.Label(self.root, text="Tour : Blancs", font=("Segoe UI", 16, "bold"), fg="#2c3e50", bg="#f8f9fa")
+        self.info_label.pack(side=tk.TOP, fill=tk.X, pady=10)
 
-        self.board_frame = tk.Frame(self.root, bg="#2b2b2b", bd=4)
-        self.board_frame.pack(padx=10, pady=10)
+        self.canvas_frame = tk.Frame(self.root, bg="#2c3e50")
+        self.canvas_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
 
-        self.buttons = [[None for _ in range(8)] for _ in range(8)]
+        self.canvas = tk.Canvas(self.canvas_frame, bg="#2c3e50", highlightthickness=0)
+        self.canvas.pack(fill=tk.BOTH, expand=True)
+
+        self.canvas.bind("<Configure>", lambda e: self.draw_board())
+        self.canvas.bind("<Button-1>", self.on_canvas_click)
+
+        footer = tk.Frame(self.root, bg="#f8f9fa")
+        footer.pack(side=tk.BOTTOM, fill=tk.X, pady=10)
+
+        tk.Button(
+            footer, text="Nouvelle Partie", font=("Segoe UI", 12, "bold"),
+            bg="#3498db", fg="white", relief=tk.FLAT, padx=15, pady=8,
+            command=self.reset_game
+        ).pack()
+
+        self.root.config(bg="#f8f9fa")
+
+    def get_cell_size(self):
+        w, h = self.canvas.winfo_width(), self.canvas.winfo_height()
+        return max(40, min(w, h) // 8)
+
+    def draw_board(self):
+        self.canvas.delete("all")
+        cell_size = self.get_cell_size()
+        w, h = self.canvas.winfo_width(), self.canvas.winfo_height()
+        start_x, start_y = (w - cell_size * 8) // 2, (h - cell_size * 8) // 2
+        board = self.env.board
+
+        light, dark = "#f0d9b5", "#b58863"
         
+        # Vider le cache des photos redimensionnées si la taille a changé
+        self.loaded_photos.clear()
+
         for r in range(8):
             for c in range(8):
-                bg_color = "#f0d9b5" if (r + c) % 2 == 0 else "#b58863"
-                btn = tk.Button(
-                    self.board_frame, text="", font=("Arial", 28), width=2, height=1,
-                    bg=bg_color, activebackground="#aaa",
-                    command=lambda row=r, col=c: self.on_square_click(row, col)
-                )
-                btn.grid(row=r, column=c, sticky="nsew")
-                self.buttons[r][c] = btn
+                rank, file = 7 - r, c
+                sq = chess.square(file, rank)
+                x1, y1 = start_x + c * cell_size, start_y + r * cell_size
+                x2, y2 = x1 + cell_size, y1 + cell_size
 
-        self.reset_btn = tk.Button(self.root, text="Nouvelle Partie", font=("Arial", 12), command=self.reset_game)
-        self.reset_btn.pack(pady=10)
+                color = light if (r + c) % 2 == 0 else dark
+                if sq == self.selected_sq:
+                    color = "#7b9c3f"
+                elif sq in self.legal_destinations:
+                    self.canvas.create_rectangle(x1, y1, x2, y2, fill=color, outline="")
+                    dot = cell_size // 6
+                    self.canvas.create_oval(x1+cell_size//2-dot, y1+cell_size//2-dot, x1+cell_size//2+dot, y1+cell_size//2+dot, fill="#4a6b22", outline="")
+                    continue
 
-    def on_square_click(self, r: int, c: int):
-        rank = 7 - r
-        file = c
-        clicked_sq = chess.square(file, rank)
+                self.canvas.create_rectangle(x1, y1, x2, y2, fill=color, outline="")
+
+                piece = board.piece_at(sq)
+                if piece:
+                    symbol = piece.symbol()
+                    if symbol in self.raw_images:
+                        # Redimensionner l'image PIL à la taille exacte de la case (avec marge)
+                        img_size = int(cell_size * 0.82)
+                        resized_pil = self.raw_images[symbol].resize((img_size, img_size), Image.Resampling.LANCZOS)
+                        photo = ImageTk.PhotoImage(resized_pil)
+                        self.loaded_photos[sq] = photo # Garder une référence pour éviter le garbage collection
+                        self.canvas.create_image(x1 + cell_size // 2, y1 + cell_size // 2, image=photo, anchor=tk.CENTER)
+                    else:
+                        # Fallback : Badge élégant avec lettre
+                        letter = PIECE_LABELS[symbol]
+                        pad = int(cell_size * 0.15)
+                        bx1, by1 = x1 + pad, y1 + pad
+                        bx2, by2 = x2 - pad, y2 - pad
+                        is_w = (piece.color == chess.WHITE)
+                        b_fill = "#ffffff" if is_w else "#2f3640"
+                        b_out = "#dcdde1" if is_w else "#718093"
+                        t_col = "#2f3640" if is_w else "#f5f6fa"
+                        self.canvas.create_oval(bx1+2, by1+2, bx2+2, by2+2, fill="#000000", outline="")
+                        self.canvas.create_oval(bx1, by1, bx2, by2, fill=b_fill, outline=b_out, width=2)
+                        self.canvas.create_text(x1 + cell_size // 2, y1 + cell_size // 2, text=letter, font=("Segoe UI", int(cell_size * 0.38), "bold"), fill=t_col)
+
+        turn_text = "Tour : Blancs (♔)" if board.turn == chess.WHITE else "Tour : Noires (♚)"
+        if board.is_check(): turn_text += " — ⚠️ ÉCHEC !"
+        self.info_label.config(text=turn_text)
+
+    def on_canvas_click(self, event):
+        cell_size = self.get_cell_size()
+        w, h = self.canvas.winfo_width(), self.canvas.winfo_height()
+        start_x, start_y = (w - cell_size * 8) // 2, (h - cell_size * 8) // 2
+
+        if not (start_x <= event.x < start_x + cell_size * 8 and start_y <= event.y < start_y + cell_size * 8):
+            return
+
+        c, r = (event.x - start_x) // cell_size, (event.y - start_y) // cell_size
+        clicked_sq = chess.square(c, 7 - r)
         board = self.env.board
 
         if self.selected_sq is None:
             piece = board.piece_at(clicked_sq)
-            if piece is not None and piece.color == board.turn:
+            if piece and piece.color == board.turn:
                 self.selected_sq = clicked_sq
-                self.legal_destinations = [
-                    m.to_square for m in board.legal_moves if m.from_square == clicked_sq
-                ]
-                self.highlight_board()
+                self.legal_destinations = [m.to_square for m in board.legal_moves if m.from_square == clicked_sq]
+                self.draw_board()
         else:
-            from_sq = self.selected_sq
-            to_sq = clicked_sq
+            move = next((m for m in board.legal_moves if m.from_square == self.selected_sq and m.to_square == clicked_sq), None)
+            self.selected_sq, self.legal_destinations = None, []
 
-            move = None
-            for m in board.legal_moves:
-                if m.from_square == from_sq and m.to_square == to_sq:
-                    move = m
-                    break
-
-            self.selected_sq = None
-            self.legal_destinations = []
-
-            if move is not None:
-                try:
-                    _, _, done, info = self.env.step(move)
-                    self.update_board_display()
-                    if done:
-                        messagebox.showinfo("Fin de partie", f"Résultat : {info.get('result', 'Terminée')}")
-                except Exception as e:
-                    messagebox.showerror("Erreur", str(e))
+            if move:
+                _, _, done, info = self.env.step(move)
+                self.draw_board()
+                if done:
+                    messagebox.showinfo("Fin", f"Résultat : {info.get('result', 'Terminée')}")
             else:
                 piece = board.piece_at(clicked_sq)
-                if piece is not None and piece.color == board.turn:
+                if piece and piece.color == board.turn:
                     self.selected_sq = clicked_sq
-                    self.legal_destinations = [
-                        m.to_square for m in board.legal_moves if m.from_square == clicked_sq
-                    ]
-                    self.highlight_board()
+                    self.legal_destinations = [m.to_square for m in board.legal_moves if m.from_square == clicked_sq]
+                    self.draw_board()
                     return
-
-            self.update_board_display()
-
-    def highlight_board(self):
-        for r in range(8):
-            for c in range(8):
-                rank = 7 - r
-                file = c
-                sq = chess.square(file, rank)
-                base_color = "#f0d9b5" if (r + c) % 2 == 0 else "#b58863"
-                if sq == self.selected_sq:
-                    base_color = "#baca44"
-                elif sq in self.legal_destinations:
-                    base_color = "#f7ec7d"
-                self.buttons[r][c].config(bg=base_color)
-
-    def update_board_display(self):
-        board = self.env.board
-        for r in range(8):
-            for c in range(8):
-                rank = 7 - r
-                file = c
-                sq = chess.square(file, rank)
-                piece = board.piece_at(sq)
-                symbol = PIECE_UNICODE[piece.symbol()] if piece else ""
-                base_color = "#f0d9b5" if (r + c) % 2 == 0 else "#b58863"
-                self.buttons[r][c].config(text=symbol, bg=base_color)
-
-        turn_text = "Tour : Blanches (♔)" if board.turn == chess.WHITE else "Tour : Noires (♚)"
-        if board.is_check():
-            turn_text += " - ÉCHEC !"
-        self.info_label.config(text=turn_text)
+            self.draw_board()
 
     def reset_game(self):
         self.env.reset()
         self.selected_sq = None
         self.legal_destinations = []
-        self.update_board_display()
+        self.draw_board()
 
 def main():
     root = tk.Tk()
-    app = ChessGUI(root)
+    ChessGUI(root)
     root.mainloop()
 
 if __name__ == "__main__":
