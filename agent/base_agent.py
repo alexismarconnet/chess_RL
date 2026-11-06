@@ -1,3 +1,4 @@
+import os
 import torch
 import numpy as np
 import chess
@@ -35,7 +36,6 @@ class BaseChessAgent:
         if len(legal_indices) == 0:
             return None, value, []
 
-        # Masquer les coups illégaux avec -1e9
         masked_logits = np.full_like(policy_logits, -1e9)
         masked_logits[legal_indices] = policy_logits[legal_indices]
 
@@ -44,12 +44,19 @@ class BaseChessAgent:
     def select_action(self, board: chess.Board) -> chess.Move:
         raise NotImplementedError("La méthode select_action doit être implémentée par les sous-classes.")
 
+    def save(self, path: str):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        torch.save(self.model.state_dict(), path)
+
+    def load(self, path: str) -> bool:
+        if os.path.exists(path):
+            self.model.load_state_dict(torch.load(path, map_location=self.device))
+            self.model.eval()
+            return True
+        return False
+
 
 class GreedyAgent(BaseChessAgent):
-    """
-    Agent Glouton (Greedy) : Choisit toujours le coup ayant la note (logit) la plus élevée.
-    Zéro exploration.
-    """
     def select_action(self, board: chess.Board) -> chess.Move:
         masked_logits, _, legal_indices = self._get_legal_logits(board)
         if len(legal_indices) == 0:
@@ -60,10 +67,6 @@ class GreedyAgent(BaseChessAgent):
 
 
 class EpsilonGreedyAgent(BaseChessAgent):
-    """
-    Agent Epsilon-Greedy : Explore de manière aléatoire avec une probabilité epsilon,
-    sinon exploite le meilleur coup greedy.
-    """
     def __init__(self, epsilon: float = 0.1, **kwargs):
         super().__init__(**kwargs)
         self.epsilon = epsilon
@@ -73,21 +76,15 @@ class EpsilonGreedyAgent(BaseChessAgent):
         if len(legal_indices) == 0:
             return None
 
-        # Exploration aléatoire
         if np.random.rand() < self.epsilon:
             chosen_action = int(np.random.choice(legal_indices))
         else:
-            # Exploitation
             chosen_action = int(np.argmax(masked_logits))
 
         return action_to_move(chosen_action, board)
 
 
 class UCBAgent(BaseChessAgent):
-    """
-    Agent UCB (Upper Confidence Bound) : Équilibre l'exploitation (score du réseau)
-    et l'exploration (coups joués moins souvent).
-    """
     def __init__(self, c_param: float = 1.41, **kwargs):
         super().__init__(**kwargs)
         self.c_param = c_param
@@ -110,7 +107,6 @@ class UCBAgent(BaseChessAgent):
         for act in legal_indices:
             q_value = masked_logits[act]
             n_a = self.visit_counts[fen][act]
-            
             exploration_bonus = self.c_param * np.sqrt(np.log(1 + total_state_visits) / (1 + n_a))
             ucb_scores[act] = q_value + exploration_bonus
 
@@ -120,4 +116,3 @@ class UCBAgent(BaseChessAgent):
         self.state_visits[fen] += 1
 
         return action_to_move(best_action, board)
-
