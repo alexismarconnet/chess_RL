@@ -3,7 +3,7 @@ import time
 import os
 import torch
 from environment import ChessEnvironment
-from agent import GreedyAgent, EpsilonGreedyAgent, UCBAgent
+from agent import GreedyAgent, EpsilonGreedyAgent, UCBAgent, MCTSAgent
 from training import ReplayBuffer, Trainer
 
 DEFAULT_MODEL_PATH = "saved_models/chess_agent.pt"
@@ -12,7 +12,8 @@ def main():
     parser = argparse.ArgumentParser(description="Entraînement de l'agent RL aux échecs.")
     parser.add_argument("--num_games", type=int, default=20, help="Nombre de parties autonomes (self-play).")
     parser.add_argument("--batch_size", type=int, default=32, help="Taille du mini-lot d'entraînement.")
-    parser.add_argument("--agent_type", type=str, choices=["greedy", "epsilon", "ucb"], default="epsilon", help="Type d'agent.")
+    parser.add_argument("--agent_type", type=str, choices=["greedy", "epsilon", "ucb", "mcts"], default="mcts", help="Type d'agent.")
+    parser.add_argument("--num_simulations", type=int, default=30, help="Nombre de simulations MCTS par coup.")
     parser.add_argument("--epsilon", type=float, default=0.2, help="Epsilon pour EpsilonGreedyAgent.")
     parser.add_argument("--lr", type=float, default=1e-3, help="Taux d'apprentissage.")
     parser.add_argument("--save_path", type=str, default=DEFAULT_MODEL_PATH, help="Chemin de sauvegarde du modèle.")
@@ -29,8 +30,10 @@ def main():
         agent = GreedyAgent(device=device)
     elif args.agent_type == "epsilon":
         agent = EpsilonGreedyAgent(epsilon=args.epsilon, device=device)
-    else:
+    elif args.agent_type == "ucb":
         agent = UCBAgent(c_param=1.41, device=device)
+    else:
+        agent = MCTSAgent(num_simulations=args.num_simulations, device=device)
 
     if args.resume and agent.load(args.save_path):
         print(f"Modèle chargé depuis '{args.save_path}'.")

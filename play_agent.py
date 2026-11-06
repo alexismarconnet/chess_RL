@@ -9,7 +9,7 @@ from PIL import Image, ImageTk
 # Assurer l'accès aux modules du projet
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from environment import ChessEnvironment
-from agent import GreedyAgent, EpsilonGreedyAgent, UCBAgent
+from agent import GreedyAgent, EpsilonGreedyAgent, UCBAgent, MCTSAgent
 
 DEFAULT_MODEL_PATH = "saved_models/chess_agent.pt"
 
@@ -221,7 +221,8 @@ class ChessAgentGUI:
 def main():
     parser = argparse.ArgumentParser(description="Jouer contre l'agent RL avec interface graphique.")
     parser.add_argument("--model_path", type=str, default=DEFAULT_MODEL_PATH, help="Chemin du modèle.")
-    parser.add_argument("--strategy", type=str, choices=["greedy", "epsilon", "ucb"], default="greedy", help="Stratégie.")
+    parser.add_argument("--num_simulations", type=int, default=30, help="Nombre de simulations MCTS.")
+    parser.add_argument("--strategy", type=str, choices=["greedy", "epsilon", "ucb", "mcts"], default="mcts", help="Stratégie.")
     parser.add_argument("--color", type=str, choices=["white", "black"], default="white", help="Votre couleur.")
     args = parser.parse_args()
 
@@ -229,8 +230,10 @@ def main():
         agent = GreedyAgent()
     elif args.strategy == "epsilon":
         agent = EpsilonGreedyAgent(epsilon=0.0)
-    else:
+    elif args.strategy == "ucb":
         agent = UCBAgent(c_param=1.41)
+    else:
+        agent = MCTSAgent(num_simulations=args.num_simulations)
 
     if os.path.exists(args.model_path):
         if agent.load(args.model_path):
