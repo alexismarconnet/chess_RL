@@ -54,11 +54,25 @@ class Trainer:
     def play_self_game(self, env: ChessEnvironment, buffer: ReplayBuffer, max_steps: int = 150):
         """
         Simule une partie d'auto-apprentissage (self-play) AlphaZero.
-        Enregistre chaque état et la distribution des probabilités MCTS pi,
-        puis assigne le résultat final de la partie z à chaque transition.
+        Commence par des coups d'ouverture aléatoires (AlphaZero style) pour diversifier les positions,
+        puis enregistre chaque état et la distribution des probabilités MCTS pi.
         """
         state = env.reset()
         done = False
+
+        # Phase d'ouverture aléatoire (2 à 4 coups légaux aléatoires)
+        num_random_moves = np.random.randint(2, 5)
+        for _ in range(num_random_moves):
+            if env.board.is_game_over():
+                break
+            legal_moves = env.get_legal_moves()
+            if not legal_moves:
+                break
+            rand_move = np.random.choice(legal_moves)
+            state, _, done, _ = env.step(rand_move)
+            if done:
+                break
+
         steps = 0
         total_reward = 0.0
         game_history = []

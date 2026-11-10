@@ -50,32 +50,75 @@ class MCTSAgent(BaseChessAgent):
         # 1. Expansion initiale de la racine (avec ou sans bruit de Dirichlet)
         self._expand_node(root, is_root=add_noise)
 
-        # 2. Exécuter les simulations MCTS
-        for _ in range(self.num_simulations):
-            node = root
-            search_board = board.copy()
+        # 2. Exécuter les simulations MCTS par batch (ex: batch_size = 8)
+        batch_size = 8
+        sims_done = 0
 
-            # A. SÉLECTION (descendre dans l'arbre via PUCT)
-            while node.is_expanded and len(node.children) > 0:
-                node, move = self._select_child(node)
-                search_board.push(move)
+        while sims_done < self.num_simulations:
+            current_batch_size = min(batch_size, self.num_simulations - sims_done)
+            sims_done += current_batch_size
 
-            # B. ÉVALUATION & EXPANSION
-            value = 0.0
-            if search_board.is_game_over():
-                outcome = search_board.outcome()
-                if outcome is not None:
-                    if outcome.winner == search_board.turn:
-                        value = -1.0 # Du point de vue du joueur précédent
-                    elif outcome.winner is not None:
-                        value = 1.0
+            batch_paths = []
+            for _ in range(current_batch_size):
+                node = root
+                search_board = board.copy()
+
+                # A. SÉLECTION (descendre dans l'arbre via PUCT)
+                while node.is_expanded and len(node.children) > 0:
+                    node, move = self._select_child(node)
+                    search_board.push(move)
+
+                # Vérifier si game over
+                is_over = False
+                goval = 0.0
+                if search_board.is_game_over():
+                    is_over = True
+                    outcome = search_board.outcome()
+                    if outcome is not None:
+                        if outcome.winner == search_board.turn:
+                            goval = -1.0 # Du point de vue du joueur précédent
+                        elif outcome.winner is not None:
+                            goval = 1.0
+                        else:
+                            goval = 0.0
+
+                batch_paths.append((node, search_board, is_over, goval))
+
+            # B. ÉVALUATION BATCHÉE (Inférence réseau en un seul appel pour le batch)
+            to_eval_boards = []
+            to_eval_fens = []
+
+            for node, sboard, is_over, goval in batch_paths:
+                if is_over:
+                    continue
+                fen = sboard.fen()
+                if fen not in self.eval_cache and fen not in to_eval_fens:
+                    to_eval_boards.append(sboard)
+                    to_eval_fens.append(fen)
+
+            if len(to_eval_boards) > 0:
+                tensors = [torch.tensor(board_to_tensor(b), dtype=torch.float32, device=self.device) for b in to_eval_boards]
+                states_t = torch.stack(tensors)
+                with torch.no_grad():
+                    policy_logits_batch, values_batch = self.model(states_t)
+                    policy_logits_batch = policy_logits_batch.cpu().numpy()
+                    values_batch = values_batch.squeeze(-1).cpu().numpy()
+
+                for fen, plog, val in zip(to_eval_fens, policy_logits_batch, values_batch):
+                    self.eval_cache[fen] = (plog, float(val))
+
+            # C. EXPANSION & RÉTROPROPAGATION
+            for node, sboard, is_over, goval in batch_paths:
+                if is_over:
+                    value = goval
+                else:
+                    fen = sboard.fen()
+                    plog, val = self.eval_cache[fen]
+                    if not node.is_expanded:
+                        value = self._expand_node(node, sboard, precomputed_logits=plog, precomputed_value=val)
                     else:
-                        value = 0.0
-            else:
-                value = self._expand_node(node, search_board)
-
-            # C. RÉTROPROPAGATION
-            self._backpropagate(node, value)
+                        value = val
+                self._backpropagate(node, value)
 
         # 3. Choix du coup final et construction du vecteur de politique MCTS pi
         if not root.children:
@@ -115,12 +158,14 @@ class MCTSAgent(BaseChessAgent):
         move, _ = self.get_action_and_policy(board, temperature=temperature)
         return move
 
-    def _expand_node(self, node: MCTSNode, board: chess.Board = None, is_root: bool = False) -> float:
+    def _expand_node(self, node: MCTSNode, board: chess.Board = None, is_root: bool = False, precomputed_logits=None, precomputed_value=None) -> float:
         if board is None:
             board = node.board
 
         fen = board.fen()
-        if hasattr(self, 'eval_cache') and fen in self.eval_cache:
+        if precomputed_logits is not None and precomputed_value is not None:
+            policy_logits, value = precomputed_logits, precomputed_value
+        elif hasattr(self, 'eval_cache') and fen in self.eval_cache:
             policy_logits, value = self.eval_cache[fen]
         else:
             # Obtenir les prédictions du réseau de neurones

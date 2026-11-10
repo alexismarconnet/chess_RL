@@ -84,7 +84,17 @@ class ChessEnvironment:
                     info["result"] = "black_win"
                 else:
                     reward -= 0.05  # Légère pénalité pour match nul
-                    info["result"] = "draw"
+                    term = outcome.termination
+                    if term == chess.Termination.STALEMATE:
+                        info["result"] = "draw_stalemate"
+                    elif term in (chess.Termination.THREEFOLD_REPETITION, chess.Termination.FIVEFOLD_REPETITION):
+                        info["result"] = "draw_repetition"
+                    elif term == chess.Termination.INSUFFICIENT_MATERIAL:
+                        info["result"] = "draw_insufficient"
+                    elif term in (chess.Termination.FIFTY_MOVES, chess.Termination.SEVENTYFIVE_MOVES):
+                        info["result"] = "draw_50moves"
+                    else:
+                        info["result"] = "draw"
         else:
             # Si le jeu continue mais qu'on a atteint la limite max_steps dans une boucle externe
             pass
