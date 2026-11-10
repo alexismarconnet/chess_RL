@@ -6,30 +6,28 @@ import torch
 class ReplayBuffer:
     """
     Mémoire tampon (Experience Replay) pour stocker et échantillonner
-    des transitions (état, action, récompense, état_suivant, done).
+    des transitions AlphaZero (état, politique MCTS pi, valeur cible z).
     """
     def __init__(self, capacity: int = 10000):
         self.buffer = deque(maxlen=capacity)
 
-    def push(self, state, action, reward, next_state, done):
+    def push(self, state, policy, value):
         """
-        Ajoute une transition dans le buffer.
+        Ajoute une transition (état, politique MCTS, valeur de fin de partie z) dans le buffer.
         """
-        self.buffer.append((state, action, reward, next_state, done))
+        self.buffer.append((state, policy, value))
 
     def sample(self, batch_size: int, device: torch.device):
         """
         Tire un mini-lot aléatoire de transitions et les convertit en tenseurs PyTorch.
         """
         batch = random.sample(self.buffer, batch_size)
-        states, actions, rewards, next_states, dones = zip(*batch)
+        states, policies, values = zip(*batch)
 
         return (
             torch.tensor(np.array(states), dtype=torch.float32, device=device),
-            torch.tensor(np.array(actions), dtype=torch.long, device=device),
-            torch.tensor(np.array(rewards), dtype=torch.float32, device=device).unsqueeze(1),
-            torch.tensor(np.array(next_states), dtype=torch.float32, device=device),
-            torch.tensor(np.array(dones), dtype=torch.float32, device=device).unsqueeze(1),
+            torch.tensor(np.array(policies), dtype=torch.float32, device=device),
+            torch.tensor(np.array(values), dtype=torch.float32, device=device).unsqueeze(1),
         )
 
     def __len__(self):

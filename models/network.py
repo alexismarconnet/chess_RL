@@ -29,7 +29,7 @@ class ChessNet(nn.Module):
     - Sortie 2 (Value) : Estimation de la position entre -1.0 et +1.0 (B, 1)
     """
     def __init__(self, in_channels: int = 14, num_actions: int = 4288, 
-                 num_blocks: int = 4, hidden_dim: int = 128):
+                 num_blocks: int = 8, hidden_dim: int = 128):
         super(ChessNet, self).__init__()
 
         # 1. Convolution initiale

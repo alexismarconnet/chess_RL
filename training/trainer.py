@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 import numpy as np
+import chess
 from environment import ChessEnvironment
 from environment.board_encoder import move_to_action
 from agent import BaseChessAgent
@@ -11,7 +12,7 @@ from training.replay_buffer import ReplayBuffer
 class Trainer:
     """
     Gestionnaire d'entraînement effectuant la rétropropagation (descente de gradient)
-    et la génération de parties autonomes (self-play).
+    et la génération de parties autonomes (self-play) AlphaZero.
     """
     def __init__(self, agent: BaseChessAgent, lr: float = 1e-3, gamma: float = 0.99):
         self.agent = agent
@@ -20,30 +21,27 @@ class Trainer:
 
     def train_step(self, buffer: ReplayBuffer, batch_size: int = 64):
         """
-        Effectue une mise à jour des poids du réseau par descente de gradient
-        sur un mini-lot d'expériences tiré du ReplayBuffer.
+        Effectue une mise à jour des poids du réseau par descente de gradient (AlphaZero style) :
+        - Policy Loss : Cross-Entropy entre les probabilités MCTS pi et les logits du réseau.
+        - Value Loss : MSE entre la valeur prédite et le résultat final de la partie z.
         """
         if len(buffer) < batch_size:
             return 0.0, 0.0
 
         self.agent.model.train()
-        states, actions, rewards, next_states, dones = buffer.sample(batch_size, self.agent.device)
+        states, target_policies, target_values = buffer.sample(batch_size, self.agent.device)
 
         # 1. Prédictions actuelles du réseau
         policy_logits, values = self.agent.model(states)
 
-        # 2. Valeurs cibles (Temporal Difference / Q-value)
-        with torch.no_grad():
-            _, next_values = self.agent.model(next_states)
-            target_values = rewards + (1.0 - dones) * self.gamma * next_values
-
-        # 3. Calcul des pertes (Value Loss + Policy Loss)
+        # 2. Calcul des pertes
         value_loss = F.mse_loss(values, target_values)
-        policy_loss = F.cross_entropy(policy_logits, actions)
+        log_probs = F.log_softmax(policy_logits, dim=-1)
+        policy_loss = -(target_policies * log_probs).sum(dim=-1).mean()
 
         total_loss = policy_loss + value_loss
 
-        # 4. Rétropropagation (Backpropagation)
+        # 3. Rétropropagation
         self.optimizer.zero_grad()
         total_loss.backward()
         torch.nn.utils.clip_grad_norm_(self.agent.model.parameters(), max_norm=1.0)
@@ -55,31 +53,52 @@ class Trainer:
 
     def play_self_game(self, env: ChessEnvironment, buffer: ReplayBuffer, max_steps: int = 150):
         """
-        Simule une partie d'auto-apprentissage (self-play) où l'agent joue contre lui-même.
-        Chaque transition est ajoutée au ReplayBuffer.
+        Simule une partie d'auto-apprentissage (self-play) AlphaZero.
+        Enregistre chaque état et la distribution des probabilités MCTS pi,
+        puis assigne le résultat final de la partie z à chaque transition.
         """
         state = env.reset()
         done = False
         steps = 0
         total_reward = 0.0
+        game_history = []
 
         while not done and steps < max_steps:
-            # L'agent choisit un coup sur la position actuelle
-            move = self.agent.select_action(env.board)
+            temperature = 1.0 if steps < 30 else 0.0
+            if hasattr(self.agent, 'get_action_and_policy'):
+                move, policy = self.agent.get_action_and_policy(env.board, temperature=temperature)
+            else:
+                move = self.agent.select_action(env.board)
+                policy = np.zeros(4288, dtype=np.float32)
+                if move:
+                    policy[move_to_action(move)] = 1.0
+
             if move is None:
                 break
 
-            action_idx = move_to_action(move)
+            turn = env.board.turn
+            game_history.append((state, policy, turn))
 
-            # L'environnement exécute le coup
             next_state, reward, done, info = env.step(move)
-
-            # Enregistrement de la transition dans le ReplayBuffer
-            buffer.push(state, action_idx, reward, next_state, float(done))
-
             state = next_state
             total_reward += reward
             steps += 1
 
         result = info.get("result", "max_steps") if done else "max_steps"
+        winner = None
+        if result == "white_win":
+            winner = chess.WHITE
+        elif result == "black_win":
+            winner = chess.BLACK
+
+        # Attribuer la valeur z du point de vue de chaque joueur à chaque tour
+        for st, pol, turn in game_history:
+            if winner is None:
+                z = 0.0
+            elif winner == turn:
+                z = 1.0
+            else:
+                z = -1.0
+            buffer.push(st, pol, z)
+
         return steps, total_reward, result

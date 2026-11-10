@@ -32,12 +32,15 @@ class MCTSAgent(BaseChessAgent):
     Agent MCTS guidé par le Réseau de Neurones (inspiré d'AlphaZero).
     Anticipe les futurs coups par simulations dans un arbre de recherche avant de décider.
     """
-    def __init__(self, num_simulations: int = 50, c_puct: float = 1.41, **kwargs):
+    def __init__(self, num_simulations: int = 50, c_puct: float = 1.41, temperature: float = 1.0, **kwargs):
         super().__init__(**kwargs)
         self.num_simulations = num_simulations
         self.c_puct = c_puct
+        self.temperature = temperature
 
-    def select_action(self, board: chess.Board) -> chess.Move:
+    def get_action_and_policy(self, board: chess.Board, temperature: float = None):
+        if temperature is None:
+            temperature = self.temperature
         root = MCTSNode(board.copy())
 
         # 1. Expansion initiale de la racine
@@ -70,13 +73,43 @@ class MCTSAgent(BaseChessAgent):
             # C. RÉTROPROPAGATION
             self._backpropagate(node, value)
 
-        # 3. Choix du coup final basé sur le plus grand nombre de visites
+        # 3. Choix du coup final et construction du vecteur de politique MCTS pi
         if not root.children:
             legal_moves = list(board.legal_moves)
-            return legal_moves[0] if legal_moves else None
+            move = legal_moves[0] if legal_moves else None
+            policy = np.zeros(4288, dtype=np.float32)
+            if move:
+                from environment.board_encoder import move_to_action
+                policy[move_to_action(move)] = 1.0
+            return move, policy
 
-        best_move = max(root.children, key=lambda m: root.children[m].visit_count)
-        return best_move
+        moves = list(root.children.keys())
+        visits = np.array([child.visit_count for child in root.children.values()], dtype=np.float32)
+
+        policy = np.zeros(4288, dtype=np.float32)
+        for move, child in root.children.items():
+            from environment.board_encoder import move_to_action
+            policy[move_to_action(move)] = child.visit_count
+
+        s_vis = np.sum(visits)
+        if s_vis > 0:
+            policy /= s_vis
+
+        if temperature == 0.0:
+            best_idx = np.argmax(visits)
+            chosen_move = moves[best_idx]
+        else:
+            scaled_visits = visits ** (1.0 / temperature)
+            s = np.sum(scaled_visits)
+            probs = scaled_visits / s if s > 0 else np.ones_like(scaled_visits) / len(scaled_visits)
+            chosen_idx = np.random.choice(len(moves), p=probs)
+            chosen_move = moves[chosen_idx]
+
+        return chosen_move, policy
+
+    def select_action(self, board: chess.Board, temperature: float = None) -> chess.Move:
+        move, _ = self.get_action_and_policy(board, temperature=temperature)
+        return move
 
     def _expand_node(self, node: MCTSNode, board: chess.Board = None) -> float:
         if board is None:
