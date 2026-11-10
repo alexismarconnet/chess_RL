@@ -17,6 +17,10 @@ class BaseChessAgent:
             self.device = torch.device(device)
 
         self.model = model if model is not None else ChessNet().to(self.device)
+        try:
+            self.model = torch.compile(self.model)
+        except Exception:
+            pass
         self.model.eval()
 
     def _get_legal_logits(self, board: chess.Board):

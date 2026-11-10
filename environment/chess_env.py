@@ -3,11 +3,11 @@ import numpy as np
 from .board_encoder import board_to_tensor, action_to_move, get_legal_action_mask
 
 MATERIAL_REWARDS = {
-    chess.PAWN: 0.02,
-    chess.KNIGHT: 0.06,
-    chess.BISHOP: 0.06,
-    chess.ROOK: 0.1,
-    chess.QUEEN: 0.18,
+    chess.PAWN: 0.0,
+    chess.KNIGHT: 0.0,
+    chess.BISHOP: 0.0,
+    chess.ROOK: 0.0,
+    chess.QUEEN: 0.0,
     chess.KING: 0.0
 }
 

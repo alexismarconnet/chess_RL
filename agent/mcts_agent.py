@@ -45,6 +45,7 @@ class MCTSAgent(BaseChessAgent):
         if temperature is None:
             temperature = self.temperature
         root = MCTSNode(board.copy())
+        self.eval_cache = {} # Cache de transposition pour la recherche MCTS
 
         # 1. Expansion initiale de la racine (avec ou sans bruit de Dirichlet)
         self._expand_node(root, is_root=add_noise)
@@ -118,12 +119,18 @@ class MCTSAgent(BaseChessAgent):
         if board is None:
             board = node.board
 
-        # Obtenir les prédictions du réseau de neurones
-        state_t = torch.tensor(board_to_tensor(board), dtype=torch.float32, device=self.device).unsqueeze(0)
-        with torch.no_grad():
-            policy_logits, value = self.model(state_t)
-            policy_logits = policy_logits.squeeze(0).cpu().numpy()
-            value = value.squeeze(0).item()
+        fen = board.fen()
+        if hasattr(self, 'eval_cache') and fen in self.eval_cache:
+            policy_logits, value = self.eval_cache[fen]
+        else:
+            # Obtenir les prédictions du réseau de neurones
+            state_t = torch.tensor(board_to_tensor(board), dtype=torch.float32, device=self.device).unsqueeze(0)
+            with torch.no_grad():
+                policy_logits, value = self.model(state_t)
+                policy_logits = policy_logits.squeeze(0).cpu().numpy()
+                value = value.squeeze(0).item()
+            if hasattr(self, 'eval_cache'):
+                self.eval_cache[fen] = (policy_logits, value)
 
         legal_mask = get_legal_action_mask(board)
         legal_indices = np.where(legal_mask > 0)[0]
