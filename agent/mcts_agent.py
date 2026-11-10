@@ -32,19 +32,22 @@ class MCTSAgent(BaseChessAgent):
     Agent MCTS guidé par le Réseau de Neurones (inspiré d'AlphaZero).
     Anticipe les futurs coups par simulations dans un arbre de recherche avant de décider.
     """
-    def __init__(self, num_simulations: int = 50, c_puct: float = 1.41, temperature: float = 1.0, **kwargs):
+    def __init__(self, num_simulations: int = 50, c_puct: float = 1.41, temperature: float = 1.0, 
+                 dirichlet_alpha: float = 0.3, dirichlet_epsilon: float = 0.25, **kwargs):
         super().__init__(**kwargs)
         self.num_simulations = num_simulations
         self.c_puct = c_puct
         self.temperature = temperature
+        self.dirichlet_alpha = dirichlet_alpha
+        self.dirichlet_epsilon = dirichlet_epsilon
 
-    def get_action_and_policy(self, board: chess.Board, temperature: float = None):
+    def get_action_and_policy(self, board: chess.Board, temperature: float = None, add_noise: bool = False):
         if temperature is None:
             temperature = self.temperature
         root = MCTSNode(board.copy())
 
-        # 1. Expansion initiale de la racine
-        self._expand_node(root)
+        # 1. Expansion initiale de la racine (avec ou sans bruit de Dirichlet)
+        self._expand_node(root, is_root=add_noise)
 
         # 2. Exécuter les simulations MCTS
         for _ in range(self.num_simulations):
@@ -111,7 +114,7 @@ class MCTSAgent(BaseChessAgent):
         move, _ = self.get_action_and_policy(board, temperature=temperature)
         return move
 
-    def _expand_node(self, node: MCTSNode, board: chess.Board = None) -> float:
+    def _expand_node(self, node: MCTSNode, board: chess.Board = None, is_root: bool = False) -> float:
         if board is None:
             board = node.board
 
@@ -135,6 +138,11 @@ class MCTSAgent(BaseChessAgent):
         # Stabilité numérique softmax
         exp_logits = np.exp(masked_logits[legal_indices] - np.max(masked_logits[legal_indices]))
         probs = exp_logits / np.sum(exp_logits)
+
+        # Ajout du bruit de Dirichlet si demandé (uniquement à la racine pendant le self-play)
+        if is_root and len(legal_indices) > 0:
+            noise = np.random.dirichlet([self.dirichlet_alpha] * len(legal_indices))
+            probs = (1.0 - self.dirichlet_epsilon) * probs + self.dirichlet_epsilon * noise
 
         # Créer les enfants
         for idx, prob in zip(legal_indices, probs):

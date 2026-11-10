@@ -66,7 +66,7 @@ class Trainer:
         while not done and steps < max_steps:
             temperature = 1.0 if steps < 30 else 0.0
             if hasattr(self.agent, 'get_action_and_policy'):
-                move, policy = self.agent.get_action_and_policy(env.board, temperature=temperature)
+                move, policy = self.agent.get_action_and_policy(env.board, temperature=temperature, add_noise=True)
             else:
                 move = self.agent.select_action(env.board)
                 policy = np.zeros(4288, dtype=np.float32)

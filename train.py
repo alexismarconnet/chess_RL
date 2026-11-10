@@ -46,7 +46,7 @@ def main():
 
     for episode in range(1, args.num_games + 1):
         # 1. Partie d'auto-apprentissage (self-play)
-        steps, reward, result = trainer.play_self_game(env, buffer, max_steps=1000)
+        steps, reward, result = trainer.play_self_game(env, buffer, max_steps=200)
 
         # 2. Rétropropagation / Descente de gradient si assez d'expériences
         p_loss, v_loss = 0.0, 0.0
