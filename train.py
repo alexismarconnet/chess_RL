@@ -18,6 +18,7 @@ def main():
     parser.add_argument("--lr", type=float, default=1e-3, help="Taux d'apprentissage.")
     parser.add_argument("--save_path", type=str, default=DEFAULT_MODEL_PATH, help="Chemin de sauvegarde du modèle.")
     parser.add_argument("--resume", action="store_true", help="Reprendre l'entraînement à partir du modèle sauvegardé.")
+    parser.add_argument("--use_material_rewards", action="store_true", help="Activer les récompenses intermédiaires sur le matériel (captures/pertes de pièces).")
     args = parser.parse_args()
 
     print("=== DÉMARRAGE DE L'ENTRAÎNEMENT RL ===")
@@ -38,7 +39,7 @@ def main():
     if args.resume and agent.load(args.save_path):
         print(f"Modèle chargé depuis '{args.save_path}'.")
 
-    env = ChessEnvironment()
+    env = ChessEnvironment(use_material_rewards=args.use_material_rewards)
     buffer = ReplayBuffer(capacity=10000)
     trainer = Trainer(agent, lr=args.lr)
 

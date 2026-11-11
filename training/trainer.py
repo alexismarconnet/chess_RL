@@ -91,9 +91,13 @@ class Trainer:
                 break
 
             turn = env.board.turn
-            game_history.append((state, policy, turn))
+            state_tensor = state
 
             next_state, reward, done, info = env.step(move)
+            capture_reward = reward if getattr(env, 'use_material_rewards', False) else 0.0
+
+            game_history.append((state_tensor, policy, turn, capture_reward))
+
             state = next_state
             total_reward += reward
             steps += 1
@@ -106,13 +110,28 @@ class Trainer:
             winner = chess.BLACK
 
         # Attribuer la valeur z du point de vue de chaque joueur à chaque tour
-        for st, pol, turn in game_history:
+        n_steps = len(game_history)
+        for i in range(n_steps):
+            st, pol, turn, _ = game_history[i]
             if winner is None:
                 z = 0.0
             elif winner == turn:
                 z = 1.0
             else:
                 z = -1.0
+
+            # Ajouter l'impact des récompenses intermédiaires (matériel) de l'étape i jusqu'à la fin
+            if getattr(env, 'use_material_rewards', False):
+                material_sum = 0.0
+                for k in range(i, n_steps):
+                    _, _, step_turn, cap_rew = game_history[k]
+                    if cap_rew > 0.0:
+                        if step_turn == turn:
+                            material_sum += cap_rew  # 'turn' a capturé une pièce adverse (+)
+                        else:
+                            material_sum -= cap_rew  # L'adversaire a capturé une pièce de 'turn' (-)
+                z += material_sum
+
             buffer.push(st, pol, z)
 
         return steps, total_reward, result

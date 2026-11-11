@@ -2,12 +2,12 @@ import chess
 import numpy as np
 from .board_encoder import board_to_tensor, action_to_move, get_legal_action_mask
 
-MATERIAL_REWARDS = {
-    chess.PAWN: 0.0,
-    chess.KNIGHT: 0.0,
-    chess.BISHOP: 0.0,
-    chess.ROOK: 0.0,
-    chess.QUEEN: 0.0,
+MATERIAL_VALUES = {
+    chess.PAWN: 0.1,
+    chess.KNIGHT: 0.3,
+    chess.BISHOP: 0.3,
+    chess.ROOK: 0.5,
+    chess.QUEEN: 1.0,
     chess.KING: 0.0
 }
 
@@ -16,8 +16,9 @@ class ChessEnvironment:
     Environnement d'échecs standardisé pour l'Apprentissage par Renforcement.
     Il renvoie des tenseurs (observations) à l'agent et gère l'espace d'actions.
     """
-    def __init__(self):
+    def __init__(self, use_material_rewards: bool = False):
         self.board = chess.Board()
+        self.use_material_rewards = use_material_rewards
 
     def reset(self) -> np.ndarray:
         """
@@ -62,11 +63,11 @@ class ChessEnvironment:
         is_capture = self.board.is_capture(move)
 
         reward = 0.0
-        if is_capture:
+        if self.use_material_rewards and is_capture:
             if self.board.is_en_passant(move):
-                reward += MATERIAL_REWARDS[chess.PAWN]
+                reward += MATERIAL_VALUES[chess.PAWN]
             elif captured_piece is not None:
-                reward += MATERIAL_REWARDS.get(captured_piece.piece_type, 0.0)
+                reward += MATERIAL_VALUES.get(captured_piece.piece_type, 0.0)
 
         self.board.push(move)
 
