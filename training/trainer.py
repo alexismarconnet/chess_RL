@@ -120,7 +120,7 @@ class Trainer:
             else:
                 mat_balance = env._get_material_balance(final_board)
                 z = mat_balance if turn == chess.WHITE else -mat_balance
-                step_penalty = (i / max_steps) * 0.05
+                step_penalty = 0.0001
                 z -= step_penalty
 
             z = float(np.clip(z, -1.0, 1.0))
