@@ -116,9 +116,9 @@ class Trainer:
             if winner is None:
                 z = 0.0
             elif winner == turn:
-                z = 1.0
+                z = 100.0
             else:
-                z = -1.0
+                z = -100.0
 
             # Ajouter l'impact des récompenses intermédiaires (matériel) de l'étape i jusqu'à la fin
             if getattr(env, 'use_material_rewards', False):
