@@ -111,27 +111,19 @@ class Trainer:
 
         # Attribuer la valeur z du point de vue de chaque joueur à chaque tour
         n_steps = len(game_history)
+        final_board = env.board
+
         for i in range(n_steps):
             st, pol, turn, _ = game_history[i]
-            if winner is None:
-                z = 0.0
-            elif winner == turn:
-                z = 100.0
+            if winner is not None:
+                z = 1.0 if winner == turn else -1.0
             else:
-                z = -100.0
+                mat_balance = env._get_material_balance(final_board)
+                z = mat_balance if turn == chess.WHITE else -mat_balance
+                step_penalty = (i / max_steps) * 0.05
+                z -= step_penalty
 
-            # Ajouter l'impact des récompenses intermédiaires (matériel) de l'étape i jusqu'à la fin
-            if getattr(env, 'use_material_rewards', False):
-                material_sum = 0.0
-                for k in range(i, n_steps):
-                    _, _, step_turn, cap_rew = game_history[k]
-                    if cap_rew > 0.0:
-                        if step_turn == turn:
-                            material_sum += cap_rew  # 'turn' a capturé une pièce adverse (+)
-                        else:
-                            material_sum -= cap_rew  # L'adversaire a capturé une pièce de 'turn' (-)
-                z += material_sum
-
+            z = float(np.clip(z, -1.0, 1.0))
             buffer.push(st, pol, z)
 
         return steps, total_reward, result

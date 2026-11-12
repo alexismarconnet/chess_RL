@@ -3,11 +3,11 @@ import numpy as np
 from .board_encoder import board_to_tensor, action_to_move, get_legal_action_mask
 
 MATERIAL_VALUES = {
-    chess.PAWN: 0.1,
-    chess.KNIGHT: 0.3,
-    chess.BISHOP: 0.3,
-    chess.ROOK: 0.5,
-    chess.QUEEN: 1.0,
+    chess.PAWN: 0.01,
+    chess.KNIGHT: 0.03,
+    chess.BISHOP: 0.03,
+    chess.ROOK: 0.05,
+    chess.QUEEN: 0.09,
     chess.KING: 0.0
 }
 
@@ -19,6 +19,20 @@ class ChessEnvironment:
     def __init__(self, use_material_rewards: bool = False):
         self.board = chess.Board()
         self.use_material_rewards = use_material_rewards
+
+    def _get_material_balance(self, board: chess.Board) -> float:
+        """Calcule la différence de matériel (Blancs - Noirs) avec les nouvelles valeurs."""
+        white_score = 0.0
+        black_score = 0.0
+        for square in chess.SQUARES:
+            piece = board.piece_at(square)
+            if piece:
+                val = MATERIAL_VALUES.get(piece.piece_type, 0.0)
+                if piece.color == chess.WHITE:
+                    white_score += val
+                else:
+                    black_score += val
+        return float(white_score - black_score)
 
     def reset(self) -> np.ndarray:
         """
@@ -62,7 +76,8 @@ class ChessEnvironment:
         captured_piece = self.board.piece_at(move.to_square)
         is_capture = self.board.is_capture(move)
 
-        reward = 0.0
+        # Légère pénalité par coup pour encourager l'agent à être efficace
+        reward = -0.001 if self.use_material_rewards else 0.0
         if self.use_material_rewards and is_capture:
             if self.board.is_en_passant(move):
                 reward += MATERIAL_VALUES[chess.PAWN]
@@ -78,13 +93,14 @@ class ChessEnvironment:
             outcome = self.board.outcome()
             if outcome is not None:
                 if outcome.winner == chess.WHITE:
-                    reward += 1.0
+                    reward = 1.0
                     info["result"] = "white_win"
                 elif outcome.winner == chess.BLACK:
-                    reward -= 1.0  # Si l'agent gagne en tant que noir, la perspective globale dépend du tour mais +1/-1 standard
+                    reward = -1.0
                     info["result"] = "black_win"
                 else:
-                    reward -= 0.05  # Légère pénalité pour match nul
+                    mat_balance = self._get_material_balance(self.board)
+                    reward = 0.5 * mat_balance - 0.05
                     term = outcome.termination
                     if term == chess.Termination.STALEMATE:
                         info["result"] = "draw_stalemate"
